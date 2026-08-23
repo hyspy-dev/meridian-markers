@@ -1,0 +1,19 @@
+{
+  "name": "Meridian Markers",
+  "version": "0.1.0",
+  "main": "meridian.markers.MarkersModule",
+  "priority": 100,
+  "requires": {
+    "packets": [
+      "UpdateWorldMap",
+      "ClearWorldMap",
+      "CreateUserMarker",
+      "RemoveMapMarker",
+      "TeleportToWorldMapMarker",
+      "ServerMessage",
+      "JoinWorld",
+      "SetClientId",
+      "ClientMovement"
+    ]
+  }
+}
