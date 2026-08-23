@@ -13,6 +13,7 @@
          UpdateWorldMap frames to hide/show markers or to keep purely local
          markers alive when the server refuses (or is never asked). -->
     <properties>
+        <meridian.protocol.version>245610536</meridian.protocol.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -29,7 +30,7 @@
         <dependency>
             <groupId>meridian</groupId>
             <artifactId>meridian-protocol</artifactId>
-            <version>245610536</version>
+            <version>${meridian.protocol.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
