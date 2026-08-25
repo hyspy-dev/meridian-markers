@@ -1,6 +1,6 @@
 {
   "name": "Meridian Markers",
-  "version": "0.1.0",
+  "version": "${project.version}",
   "main": "meridian.markers.MarkersModule",
   "priority": 100,
   "requires": {
