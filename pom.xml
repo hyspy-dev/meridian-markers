@@ -13,7 +13,6 @@
          UpdateWorldMap frames to hide/show markers or to keep purely local
          markers alive when the server refuses (or is never asked). -->
     <properties>
-        <meridian.protocol.version>245610536</meridian.protocol.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -28,15 +27,16 @@
         </dependency>
         <!-- Jedi opt-in: UpdateWorldMap / CreateUserMarker / RemoveMapMarker etc. -->
         <dependency>
-            <groupId>meridian</groupId>
-            <artifactId>meridian-protocol</artifactId>
-            <version>${meridian.protocol.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-all</artifactId>
             <version>4.1.100.Final</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Everything the page needs: the markers, the player, the chat line. -->
+        <dependency>
+            <groupId>meridian</groupId>
+            <artifactId>meridian-core-api</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
         <dependency>

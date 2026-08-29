@@ -3,17 +3,14 @@
   "version": "${project.version}",
   "main": "meridian.markers.MarkersModule",
   "priority": 100,
+  "dependsOn": {
+    "meridian-core": ">=1.1.0"
+  },
   "requires": {
-    "packets": [
-      "UpdateWorldMap",
-      "ClearWorldMap",
-      "CreateUserMarker",
-      "RemoveMapMarker",
-      "TeleportToWorldMapMarker",
-      "ServerMessage",
-      "JoinWorld",
-      "SetClientId",
-      "ClientMovement"
+    "services": [
+      "meridian.core.api.MapMarkers",
+      "meridian.core.api.Chat",
+      "meridian.core.api.World"
     ]
   }
 }

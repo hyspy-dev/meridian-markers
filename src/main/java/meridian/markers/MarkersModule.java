@@ -1,143 +1,110 @@
 package meridian.markers;
 
-import java.nio.file.Path;
 import java.time.Duration;
 import meridian.api.module.ModuleContext;
 import meridian.api.module.ProxyModule;
-import meridian.api.packet.Direction;
-import meridian.api.packet.HandlerPosition;
 import meridian.api.settings.SettingBinding;
 import meridian.api.settings.SettingsSpec;
-import org.slf4j.Logger;
+import meridian.core.api.Chat;
+import meridian.core.api.MapMarkers;
+import meridian.core.api.MarkerCategory;
+import meridian.core.api.Vec3;
+import meridian.core.api.World;
 
 /**
- * meridian-markers — world-map marker manager for the Meridian proxy.
+ * meridian-markers - a page for managing what is on the world map.
  *
- * <p>A Jedi (Layer-1) module. What it does:
- * <ul>
- *   <li><b>Cache</b> — every marker the server sends (POIs, user markers,
- *       player positions) is cached per world and persisted, so the list —
- *       including where each player was last seen — survives reconnects.</li>
- *   <li><b>Local-only mode</b> — a checkbox flips marker creation between
- *       "local + server" (forward, fall back to local on refusal) and
- *       "local only" (the server is never asked).</li>
- *   <li><b>Refusal fallback</b> — the server never acks create/remove, so a
- *       forwarded request arms a 5 s timeout; if no confirming
- *       {@code UpdateWorldMap} arrives, the operation is applied locally and a
- *       chat notice is sent.</li>
- *   <li><b>Toggles</b> — every marker, every icon/colour group, and every
- *       category (shared / private / players / server / local) can be shown or
- *       hidden individually; hiding forges {@code removedMarkers}, showing
- *       forges {@code addedMarkers}.</li>
- *   <li><b>Player ghosts</b> — when a player's live marker disappears, an
- *       optional "last seen" ghost marker takes its place.</li>
- * </ul>
+ * <p>The map itself belongs to {@link MapMarkers} in core: what markers exist, which of them the
+ * client is shown, and what to do when the server quietly refuses a request. This module is the
+ * face of it - a searchable list, groups by icon and colour, and a form for placing a marker -
+ * and touches no packets, so one build serves every version of the game.
  */
 public class MarkersModule implements ProxyModule {
 
-    private MarkerStore store;
-    private Path dataFile;
+    /** Often enough to feel immediate, rarely enough that a busy world is not re-read constantly. */
+    private static final Duration REFRESH = Duration.ofMillis(500);
 
-    // "Create marker" form state (edited on the EDT, read on button clicks).
-    private final SettingBinding<String> xBinding = new SettingBinding<>();
-    private final SettingBinding<String> zBinding = new SettingBinding<>();
-    private volatile String newName = "";
-    private volatile String newX = "";
-    private volatile String newZ = "";
-    private volatile MarkerIcon newIcon = MarkerIcon.UserA;
-    private volatile int newTint = 0xFFFF5555;
-    private volatile boolean newTintApply;
-    private volatile CreateTarget newTarget = CreateTarget.LOCAL;
+    // The create form, filled in on the settings thread and read when a button is pressed.
+    private final SettingBinding<String> xField = new SettingBinding<>();
+    private final SettingBinding<String> zField = new SettingBinding<>();
+    private volatile String name = "";
+    private volatile String x = "";
+    private volatile String z = "";
+    private volatile MarkerIcon icon = MarkerIcon.UserA;
+    private volatile int tint = 0xFFFF5555;
+    private volatile boolean applyTint;
+    private volatile CreateTarget target = CreateTarget.LOCAL;
 
     @Override
     public void onEnable(ModuleContext ctx) {
-        Logger log = ctx.getLogger();
-        dataFile = ctx.getDataDir().resolve("markers.json");
-        store = new MarkerStore(log);
-        store.load(dataFile);
+        MapMarkers markers = ctx.services().require(MapMarkers.class);
+        MarkersView view = new MarkersView(markers, ctx.services().require(Chat.class),
+                ctx.services().require(World.class));
 
-        MarkersEngine engine = new MarkersEngine(log, store, ctx.scheduler());
-
-        // S2C WorldMap channel — cache + filter UpdateWorldMap, follow ClearWorldMap.
-        ctx.registerHandler(Direction.S2C, HandlerPosition.NORMAL,
-                (direction, session) -> new WorldMapChannelHandler(engine));
-
-        // BOTH Default channel — marker requests (C2S), world + chat session (S2C).
-        ctx.registerHandler(Direction.BOTH, HandlerPosition.NORMAL,
-                (direction, session) -> new DefaultChannelHandler(engine));
-
-        // Debounced cache persistence; markers.json is small, 5 s is plenty.
-        ctx.scheduler().scheduleAtFixedRate(() -> store.saveIfDirty(dataFile),
-                Duration.ofSeconds(5), Duration.ofSeconds(5));
-        ctx.onShutdown(() -> store.saveIfDirty(dataFile));
+        // Markers arrive in bursts as the player walks, and every one of them could change what
+        // the list says. Redrawing on a timer collapses a burst into one pass.
+        ctx.scheduler().scheduleAtFixedRate(view::refresh, REFRESH, REFRESH);
 
         ctx.registerSettings(SettingsSpec.builder()
                 .bool("localOnly",
-                        "Local-only markers (never send create/remove to the server)",
-                        false, engine::setLocalOnly)
+                        "Keep markers to myself (never ask the server)",
+                        false, markers::setLocalOnly)
                 .bool("rememberPlayers",
-                        "Remember last seen player positions (ghost markers)",
-                        true, engine::setRememberPlayers)
-                .section("Categories", SettingsSpec.builder()
-                        .bool("showShared", "Shared (global) markers", true,
-                                v -> engine.setCategory(MarkerCategory.USER_SHARED, v))
-                        .bool("showPrivate", "Private markers", true,
-                                v -> engine.setCategory(MarkerCategory.USER_PRIVATE, v))
-                        .bool("showPlayers", "Player markers", true,
-                                v -> engine.setCategory(MarkerCategory.PLAYER, v))
-                        .bool("showServer", "Server markers (POI, spawn, death, ...)", true,
-                                v -> engine.setCategory(MarkerCategory.SERVER, v))
-                        .bool("showLocal", "Local markers", true,
-                                v -> engine.setCategory(MarkerCategory.LOCAL, v))
+                        "Leave a marker where a player was last seen",
+                        true, markers::setPlayerGhosts)
+                .section("Show", SettingsSpec.builder()
+                        .bool("showShared", "Markers shared with everyone", true,
+                                v -> view.setKindShown(MarkerCategory.USER_SHARED, v))
+                        .bool("showPrivate", "Markers players keep to themselves", true,
+                                v -> view.setKindShown(MarkerCategory.USER_PRIVATE, v))
+                        .bool("showPlayers", "Where players are", true,
+                                v -> view.setKindShown(MarkerCategory.PLAYER, v))
+                        .bool("showServer", "The world's own (spawn, homes, points of interest)",
+                                true, v -> view.setKindShown(MarkerCategory.SERVER, v))
+                        .bool("showLocal", "Mine", true,
+                                v -> view.setKindShown(MarkerCategory.LOCAL, v))
                         .build())
-                .section("Create marker", SettingsSpec.builder()
-                        .string("newName", "Name", "", v -> newName = v)
-                        .string("newX", "X", "", v -> newX = v, xBinding)
-                        .string("newZ", "Z", "", v -> newZ = v, zBinding)
-                        .enum_("newIcon", "Icon", MarkerIcon.class, MarkerIcon.UserA,
-                                v -> newIcon = v)
-                        .color("newTint", "Tint colour", 0xFFFF5555, v -> newTint = v)
-                        .bool("newTintApply", "Apply tint colour", false, v -> newTintApply = v)
-                        .enum_("newTarget", "Create as", CreateTarget.class, CreateTarget.LOCAL,
-                                v -> newTarget = v)
-                        .button("Use current position", () -> {
-                            double[] p = engine.currentPos();
-                            if (p == null) {
-                                engine.setCreateStatus("Position unknown yet — move around first.");
+                .section("Place a marker", SettingsSpec.builder()
+                        .string("newName", "Name", "", v -> name = v)
+                        .string("newX", "X", "", v -> x = v, xField)
+                        .string("newZ", "Z", "", v -> z = v, zField)
+                        .enum_("newIcon", "Icon", MarkerIcon.class, MarkerIcon.UserA, v -> icon = v)
+                        .color("newTint", "Colour", 0xFFFF5555, v -> tint = v)
+                        .bool("newTintApply", "Use that colour", false, v -> applyTint = v)
+                        .enum_("newTarget", "Who can see it", CreateTarget.class,
+                                CreateTarget.LOCAL, v -> target = v)
+                        .button("Where I am now", () -> {
+                            Vec3 here = view.here();
+                            if (here == null) {
+                                view.setCreateStatus("I do not know where you are yet - move.");
                                 return;
                             }
-                            xBinding.set(String.valueOf((int) p[0]));
-                            zBinding.set(String.valueOf((int) p[2]));
+                            xField.set(String.valueOf((int) here.x()));
+                            zField.set(String.valueOf((int) here.z()));
                         })
-                        .button("Create marker", () -> engine.createFromUi(
-                                newName, newX, newZ, newIcon, newTint, newTintApply, newTarget))
-                        .liveText("Result", engine::createStatus)
+                        .button("Place it", () ->
+                                view.create(name, x, z, icon, tint, applyTint, target))
+                        .liveText("Result", view::createStatus)
                         .build())
-                .section("Markers (click a row to toggle & select)", SettingsSpec.builder()
-                        .string("search", "Search (name / icon / colour / category)", "",
-                                engine::setSearch)
-                        .liveList("Markers", engine::markerRowsView, engine::onMarkerRowClick)
-                        .liveText("Selected", engine::selectedLine)
-                        .button("Delete selected marker", engine::deleteSelected)
+                .section("Markers (click a row to show or hide it)", SettingsSpec.builder()
+                        .string("search", "Search by name, icon, colour or kind", "",
+                                view::setSearch)
+                        .liveList("Markers", view::markerRows, view::onMarkerClick)
+                        .liveText("Selected", view::selectedLine)
+                        .button("Delete the selected marker", view::deleteSelected)
                         .build())
-                .section("Groups (click a row to toggle)", SettingsSpec.builder()
-                        .liveList("Icon / colour groups", engine::groupRowsView, engine::onGroupRowClick)
-                        .build())
-                .liveText("Status", engine::statusLine)
-                .button("Re-enable all hidden markers", engine::resetDisabled)
-                .button("Forget last-seen players (this world)", engine::forgetLastSeen)
-                .button("Delete all local markers (this world)", engine::deleteAllLocal)
+                .section("Groups (click a row to show or hide the whole group)",
+                        SettingsSpec.builder()
+                                .liveList("By icon and colour", view::groupRows, view::onGroupClick)
+                                .build())
+                .liveText("Status", view::status)
+                .button("Show everything again", view::showEverything)
+                .button("Forget where players were last seen", view::forgetOfflinePlayers)
+                .button("Delete all of my markers in this world", view::deleteLocal)
                 .persistent("localOnly", "rememberPlayers",
                         "showShared", "showPrivate", "showPlayers", "showServer", "showLocal")
                 .build());
 
-        log.info("meridian-markers enabled — cache file {}", dataFile);
-    }
-
-    @Override
-    public void onDisable() {
-        if (store != null && dataFile != null) {
-            store.saveIfDirty(dataFile);
-        }
+        ctx.getLogger().info("meridian-markers enabled");
     }
 }
