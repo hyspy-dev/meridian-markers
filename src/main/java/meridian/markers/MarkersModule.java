@@ -7,7 +7,9 @@ import meridian.api.settings.SettingBinding;
 import meridian.api.settings.SettingsSpec;
 import meridian.core.api.Chat;
 import meridian.core.api.MapMarkers;
+import meridian.core.api.MarkerArchive;
 import meridian.core.api.MarkerCategory;
+import meridian.core.api.MarkerSource;
 import meridian.core.api.Vec3;
 import meridian.core.api.World;
 
@@ -18,6 +20,10 @@ import meridian.core.api.World;
  * client is shown, and what to do when the server quietly refuses a request. This module is the
  * face of it - a searchable list, groups by icon and colour, and a form for placing a marker -
  * and touches no packets, so one build serves every version of the game.
+ *
+ * <p>It is also where the markers are kept. Core remembers them for as long as it runs; the file
+ * that outlives a session is {@link MarkerKeeper}'s, and so is the {@link MarkerSource} that hands
+ * markers and their pictures to anything drawing a map.
  */
 public class MarkersModule implements ProxyModule {
 
@@ -38,6 +44,11 @@ public class MarkersModule implements ProxyModule {
     @Override
     public void onEnable(ModuleContext ctx) {
         MapMarkers markers = ctx.services().require(MapMarkers.class);
+        // The markers are kept here, not in core: core remembers them while it runs, and this
+        // writes them down, hands them back at the next start, and offers them to anything
+        // drawing a map of its own.
+        ctx.services().provide(MarkerSource.class,
+                MarkerKeeper.start(ctx, ctx.services().require(MarkerArchive.class)));
         MarkersView view = new MarkersView(markers, ctx.services().require(Chat.class),
                 ctx.services().require(World.class));
 

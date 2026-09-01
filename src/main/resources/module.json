@@ -9,6 +9,7 @@
   "requires": {
     "services": [
       "meridian.core.api.MapMarkers",
+      "meridian.core.api.MarkerArchive",
       "meridian.core.api.Chat",
       "meridian.core.api.World"
     ]
