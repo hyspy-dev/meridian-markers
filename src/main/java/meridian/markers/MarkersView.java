@@ -5,7 +5,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,8 +26,9 @@ import meridian.core.api.World;
  * placing a new one.
  *
  * <p>Hiding works by kind, by icon, by colour and by marker. They combine as you would expect:
- * anything switched off anywhere is off. Switching a whole kind back on brings back every marker
- * in it, including ones clicked away one at a time - "show players again" means all of them.
+ * anything switched off anywhere is off. The switches are a rule handed to core, not a list of
+ * hidden markers, so switching a kind back on brings back what the switch took away and leaves
+ * alone what the player clicked away or deleted one at a time.
  */
 final class MarkersView {
 
@@ -68,29 +68,28 @@ final class MarkersView {
     // ------------------------------------------------------------------
 
     /**
-     * Brings the map in line with the switches, and redraws the rows.
+     * Redraws the rows.
      *
      * <p>Run on a timer rather than the moment a marker arrives: markers land several times a
-     * second while walking, and each burst is worth one decision, not a hundred.
+     * second while walking, and each burst is worth one redraw, not a hundred.
      */
     void refresh() {
-        List<Marker> all = markers.all();
-        Set<String> hide = new HashSet<>();
-        Set<String> show = new HashSet<>();
-        for (Marker marker : all) {
-            if (switchedOff(marker)) {
-                hide.add(marker.id());
-            } else if (markers.isHidden(marker.id())) {
-                show.add(marker.id());
-            }
-        }
-        if (!hide.isEmpty()) {
-            markers.hide(hide);
-        }
-        if (!show.isEmpty()) {
-            markers.show(show);
-        }
-        rebuild(all);
+        rebuild(markers.all());
+    }
+
+    /** The rule core is handed: whether no switch has this marker off. */
+    boolean passes(Marker marker) {
+        return !switchedOff(marker);
+    }
+
+    /**
+     * Whether a map of its own - the world-map window - should draw this marker: the switches
+     * let it through, and it is not a last-seen player while those are turned off.
+     */
+    boolean drawn(Marker marker) {
+        return passes(marker)
+                && (marker.category() != MarkerCategory.PLAYER || marker.online()
+                        || markers.playerGhosts());
     }
 
     private boolean switchedOff(Marker marker) {
@@ -99,12 +98,18 @@ final class MarkersView {
                 || hiddenColours.contains(colourKey(marker));
     }
 
+    /** Hands core the switches as they stand now. Core redraws the map from them. */
+    void applySwitches() {
+        markers.setFilter(this::passes);
+    }
+
     void setKindShown(MarkerCategory category, boolean shown) {
         if (shown) {
             hiddenKinds.remove(category);
         } else {
             hiddenKinds.add(category);
         }
+        applySwitches();
         refresh();
     }
 
@@ -113,6 +118,7 @@ final class MarkersView {
         hiddenIcons.clear();
         hiddenColours.clear();
         markers.showAll();
+        applySwitches();
         refresh();
     }
 
@@ -127,6 +133,12 @@ final class MarkersView {
         }
         String id = keys.get(index);
         selectedId = id;
+        Marker marker = markers.get(id).orElse(null);
+        if (marker != null && switchedOff(marker)) {
+            // A switch has it off, and a click cannot outvote a switch - the row says which.
+            refresh();
+            return;
+        }
         if (markers.isHidden(id)) {
             markers.show(id);
         } else {
@@ -146,6 +158,7 @@ final class MarkersView {
         } else if (key.startsWith("colour:")) {
             toggle(hiddenColours, key.substring("colour:".length()));
         }
+        applySwitches();
         refresh();
     }
 
@@ -363,6 +376,9 @@ final class MarkersView {
                             .atZone(ZoneId.systemDefault()))));
         } else if (!marker.online() && marker.category() != MarkerCategory.LOCAL) {
             sb.append(' ').append(span(DIM, "[remembered]"));
+        }
+        if (!visible && switchedOff(marker)) {
+            sb.append(' ').append(span(DIM, "[switched off]"));
         }
         return sb.toString();
     }

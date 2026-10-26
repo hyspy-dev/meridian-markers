@@ -44,13 +44,16 @@ public class MarkersModule implements ProxyModule {
     @Override
     public void onEnable(ModuleContext ctx) {
         MapMarkers markers = ctx.services().require(MapMarkers.class);
-        // The markers are kept here, not in core: core remembers them while it runs, and this
-        // writes them down, hands them back at the next start, and offers them to anything
-        // drawing a map of its own.
-        ctx.services().provide(MarkerSource.class,
-                MarkerKeeper.start(ctx, ctx.services().require(MarkerArchive.class)));
         MarkersView view = new MarkersView(markers, ctx.services().require(Chat.class),
                 ctx.services().require(World.class));
+        // The switches are a rule core applies, never a list it remembers; a fresh start hands
+        // it over again, and every switch flipped below hands it over once more.
+        view.applySwitches();
+        // The markers are kept here, not in core: core remembers them while it runs, and this
+        // writes them down, hands them back at the next start, and offers them to anything
+        // drawing a map of its own - through the same switches.
+        ctx.services().provide(MarkerSource.class,
+                MarkerKeeper.start(ctx, ctx.services().require(MarkerArchive.class), view::drawn));
 
         // Markers arrive in bursts as the player walks, and every one of them could change what
         // the list says. Redrawing on a timer collapses a burst into one pass.

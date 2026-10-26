@@ -5,9 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import meridian.api.module.ModuleContext;
 import meridian.core.api.Marker;
 import meridian.core.api.MarkerArchive;
@@ -34,11 +37,14 @@ final class MarkerKeeper implements MarkerSource {
     private final MarkerArchive archive;
     private final Path file;
     private final Logger log;
+    /** Whether the page's switches let a marker onto a map - the same rule core is handed. */
+    private final Predicate<Marker> drawn;
 
-    private MarkerKeeper(MarkerArchive archive, Path file, Logger log) {
+    private MarkerKeeper(MarkerArchive archive, Path file, Logger log, Predicate<Marker> drawn) {
         this.archive = archive;
         this.file = file;
         this.log = log;
+        this.drawn = drawn;
     }
 
     /**
@@ -47,10 +53,10 @@ final class MarkerKeeper implements MarkerSource {
      * <p>The first run after this module is installed also looks where core used to write, so a
      * player's markers carry over rather than starting again. Core leaves that file alone.
      */
-    static MarkerKeeper start(ModuleContext ctx, MarkerArchive archive) {
+    static MarkerKeeper start(ModuleContext ctx, MarkerArchive archive, Predicate<Marker> drawn) {
         Logger log = ctx.getLogger();
         Path file = ctx.getDataDir().resolve("markers.json");
-        MarkerKeeper keeper = new MarkerKeeper(archive, file, log);
+        MarkerKeeper keeper = new MarkerKeeper(archive, file, log, drawn);
         keeper.restore(file);
         if (archive.isEmpty()) {
             keeper.restore(coreFile(ctx));
@@ -68,6 +74,22 @@ final class MarkerKeeper implements MarkerSource {
     @Override
     public List<Marker> markers(UUID world) {
         return archive.markers(world);
+    }
+
+    /**
+     * What the window should draw: the same as the in-game map, less the waypoint budget - a
+     * window of its own has room for every one of them.
+     */
+    @Override
+    public List<Marker> shown(UUID world) {
+        Set<String> hidden = archive.hidden(world);
+        List<Marker> out = new ArrayList<>();
+        for (Marker marker : archive.markers(world)) {
+            if (!hidden.contains(marker.id()) && drawn.test(marker)) {
+                out.add(marker);
+            }
+        }
+        return out;
     }
 
     @Override
