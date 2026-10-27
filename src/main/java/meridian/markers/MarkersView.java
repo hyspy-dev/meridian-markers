@@ -1,5 +1,6 @@
 package meridian.markers;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -33,6 +34,9 @@ import meridian.core.api.World;
 final class MarkersView {
 
     private static final DateTimeFormatter SEEN = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter SEEN_DAY = DateTimeFormatter.ofPattern("dd.MM HH:mm");
+    /** Past this, a time alone could be today or yesterday, so the day is written too. */
+    private static final Duration SEEN_WITHOUT_DAY = Duration.ofHours(23);
     /** Rows are drawn as HTML on a dark background, so colour comes from font tags. */
     private static final String DIM = "#8A8A8A";
     private static final String ON = "<font color='#7FD37F'>[x]</font> ";
@@ -372,8 +376,7 @@ final class MarkersView {
         if (marker.category() == MarkerCategory.PLAYER) {
             sb.append(' ').append(marker.online()
                     ? span("#7FD37F", "online")
-                    : span(DIM, "seen " + SEEN.format(Instant.ofEpochMilli(marker.lastSeenMillis())
-                            .atZone(ZoneId.systemDefault()))));
+                    : span(DIM, "seen " + seen(marker.lastSeenMillis())));
         } else if (!marker.online() && marker.category() != MarkerCategory.LOCAL) {
             sb.append(' ').append(span(DIM, "[remembered]"));
         }
@@ -381,6 +384,13 @@ final class MarkersView {
             sb.append(' ').append(span(DIM, "[switched off]"));
         }
         return sb.toString();
+    }
+
+    /** When a player was last seen: the time, with the day once it is more than 23 hours ago. */
+    private static String seen(long millis) {
+        boolean longAgo = System.currentTimeMillis() - millis > SEEN_WITHOUT_DAY.toMillis();
+        return (longAgo ? SEEN_DAY : SEEN)
+                .format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()));
     }
 
     private boolean matches(Marker marker) {
