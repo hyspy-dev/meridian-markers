@@ -43,6 +43,8 @@ public class MarkersModule implements ProxyModule {
 
     @Override
     public void onEnable(ModuleContext ctx) {
+        // The icons are the player's own game's, read through core - none ride in this jar.
+        MarkerIcons.use(ctx.services().get(meridian.core.api.GameAssets.class).orElse(null), ctx.getDataDir());
         MapMarkers markers = ctx.services().require(MapMarkers.class);
         MarkersView view = new MarkersView(markers, ctx.services().require(Chat.class),
                 ctx.services().require(World.class));
