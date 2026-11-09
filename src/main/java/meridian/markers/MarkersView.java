@@ -215,7 +215,7 @@ final class MarkersView {
         return world.player().map(meridian.core.api.Player::position).orElse(null);
     }
 
-    void create(String name, String xText, String zText, MarkerIcon icon,
+    void create(String name, String xText, String zText, MapMarkers.Icon icon,
                 int tintArgb, boolean applyTint, CreateTarget target) {
         double x;
         double z;
@@ -228,7 +228,7 @@ final class MarkersView {
         }
         String trimmed = name == null ? "" : name.trim();
         int colour = applyTint ? tintArgb & 0xFFFFFF : -1;
-        Vec3 at = new Vec3(x, 100, z);
+        Vec3 at = new Vec3(x, MapMarkers.HEIGHT, z);
 
         if (target == CreateTarget.LOCAL || markers.localOnly()) {
             Marker made = markers.createLocal(trimmed, at, icon.file(), colour);
@@ -238,8 +238,9 @@ final class MarkersView {
             refresh();
             return;
         }
-        if (trimmed.length() > 24) {
-            createStatus = "The server will not take a name longer than 24 characters.";
+        if (trimmed.length() > MapMarkers.NAME_LIMIT) {
+            createStatus = "The server will not take a name longer than " + MapMarkers.NAME_LIMIT
+                    + " characters.";
             return;
         }
         createStatus = "Asked the server for a marker at (" + (int) x + ", " + (int) z

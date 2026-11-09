@@ -36,16 +36,16 @@ public class MarkersModule implements ProxyModule {
     private volatile String name = "";
     private volatile String x = "";
     private volatile String z = "";
-    private volatile MarkerIcon icon = MarkerIcon.UserA;
+    private volatile MapMarkers.Icon icon = MapMarkers.Icon.UserA;
     private volatile int tint = 0xFFFF5555;
     private volatile boolean applyTint;
     private volatile CreateTarget target = CreateTarget.LOCAL;
 
     @Override
     public void onEnable(ModuleContext ctx) {
-        // The icons are the player's own game's, read through core - none ride in this jar.
-        MarkerIcons.use(ctx.services().get(meridian.core.api.GameAssets.class).orElse(null), ctx.getDataDir());
         MapMarkers markers = ctx.services().require(MapMarkers.class);
+        // The icons are the player's own game's, read by core - none ride in this jar.
+        MarkerIcons.use(markers, ctx.getDataDir());
         MarkersView view = new MarkersView(markers, ctx.services().require(Chat.class),
                 ctx.services().require(World.class));
         // The switches are a rule core applies, never a list it remembers; a fresh start hands
@@ -84,7 +84,7 @@ public class MarkersModule implements ProxyModule {
                         .string("newName", "Name", "", v -> name = v)
                         .string("newX", "X", "", v -> x = v, xField)
                         .string("newZ", "Z", "", v -> z = v, zField)
-                        .enum_("newIcon", "Icon", MarkerIcon.class, MarkerIcon.UserA, v -> icon = v)
+                        .enum_("newIcon", "Icon", MapMarkers.Icon.class, MapMarkers.Icon.UserA, v -> icon = v)
                         .color("newTint", "Colour", 0xFFFF5555, v -> tint = v)
                         .bool("newTintApply", "Use that colour", false, v -> applyTint = v)
                         .enum_("newTarget", "Who can see it", CreateTarget.class,

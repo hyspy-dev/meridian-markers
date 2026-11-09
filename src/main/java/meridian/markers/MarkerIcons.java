@@ -7,12 +7,12 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import meridian.core.api.GameAssets;
+import meridian.core.api.MapMarkers;
 
 /**
- * The marker icon PNGs, read from the player's own game ({@code Common/UI/WorldMap/MapMarkers/},
- * through core's {@link GameAssets}) - the module carries none. A server's own icon is the one the
- * game downloaded for it, so custom icons show too.
+ * The marker icon PNGs, as core reads them from the player's own game ({@link MapMarkers#iconImage})
+ * - the module carries none. A server's own icon is the one the game downloaded for it, so custom
+ * icons show too.
  *
  * <p>The settings liveList renders rows through JLabel HTML, which needs a URL: an icon shown there
  * is written once into the module's own data folder, on this machine, and the {@code <img>} tag
@@ -21,9 +21,7 @@ import meridian.core.api.GameAssets;
  */
 final class MarkerIcons {
 
-    private static final String FOLDER = "Common/UI/WorldMap/MapMarkers/";
-
-    private static volatile GameAssets game;
+    private static volatile MapMarkers markers;
     private static volatile Path shown;
 
     /** markerImage file name → the file: URL of its copy ("" = not at hand). */
@@ -33,8 +31,8 @@ final class MarkerIcons {
     }
 
     /** Where icons come from, and where the copies for the settings page go. */
-    static void use(GameAssets assets, Path dataDir) {
-        game = assets;
+    static void use(MapMarkers source, Path dataDir) {
+        markers = source;
         shown = dataDir == null ? null : dataDir.resolve("icons");
         URLS.clear();
     }
@@ -44,14 +42,14 @@ final class MarkerIcons {
      * page shows inline, handed over whole: a map window cannot use an HTML tag.
      */
     static Optional<byte[]> bytes(String markerImage) {
-        GameAssets g = game;
-        if (g == null || !ours(markerImage)) {
+        MapMarkers m = markers;
+        if (m == null || !ours(markerImage)) {
             return Optional.empty();
         }
-        return g.read(FOLDER + markerImage);
+        return m.iconImage(markerImage);
     }
 
-    /** A name we are willing to look up: a plain file name, not a path elsewhere. */
+    /** A name we are willing to write a copy under: a plain file name, not a path elsewhere. */
     private static boolean ours(String markerImage) {
         return markerImage != null && !markerImage.isEmpty() && !"(none)".equals(markerImage)
                 && markerImage.indexOf('/') < 0 && markerImage.indexOf('\\') < 0
